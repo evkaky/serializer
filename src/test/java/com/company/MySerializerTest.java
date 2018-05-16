@@ -1,15 +1,34 @@
-package com.company1;
+package com.company;
 
 import static org.junit.Assert.*;
 
-import com.company.CycledGraphException;
-import com.company.MySerializer;
-import com.company.Person;
 import org.junit.Test;
 
 import java.io.*;
+import java.util.ArrayList;
 
 public class MySerializerTest {
+
+    @Test
+    public void complex() throws Exception {
+        Person p = new Person();
+        p.name = "evkaky";
+        p.age = 18;
+        ArrayList<Integer> nums = new ArrayList<>();
+        nums.add(100);
+        nums.add(200);
+        p.nums = nums;
+
+        MySerializer mySerializer = new MySerializer();
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        mySerializer.encode(p, output);
+
+        InputStream inStream = new ByteArrayInputStream(output.toByteArray());
+        Person deserializedPerson = (Person) mySerializer.decode(inStream);
+
+        assertEquals(p.nums.size(), deserializedPerson.nums.size());
+    }
 
     @Test
     public void should_serialize_deserialize_simple_type() throws Exception {

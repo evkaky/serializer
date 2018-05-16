@@ -1,16 +1,26 @@
 package com.company;
 
+import org.apache.commons.lang3.reflect.FieldUtils;
+import org.apache.commons.lang3.reflect.TypeUtils;
+
 import java.io.*;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
+import java.lang.reflect.*;
+import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 // грамматика двоичного формата:
 // obj: ( PRIMITIVE_CLASSNAME NULL_SENTINEL VAL | CLASSNAME ( FIELDNAME obj )* )
 // NULL_SENTINEL 1 - не null, 0 - null
 
 public class MySerializer {
+    public static void main(String[] args) throws Exception {
+        int[] arr = {22, 33};
+        System.out.println(TypeUtils.getArrayComponentType(arr.getClass()).getTypeName());
+    }
+
     private final Set<Class<?>> simpleTypes = new HashSet<>();
 
     public MySerializer() {
@@ -41,9 +51,23 @@ public class MySerializer {
 
         if (isTypeSimple(clazz)) {
             writePrimitiveValue(className, obj, dataOutput);
+        } else if (clazz.isArray()) {
+            Object[] arr = (Object[]) obj;
+            dataOutput.writeInt(arr.length);
+            for (int i = 0; i < arr.length - 1; i++) {
+                if (arr[i] == null) {
+//                    dataOutput.writeUTF(TypeUtils.getArrayComponentType(arr.getClass()).getTypeName());
+                    dataOutput.writeUTF("java.lang.Object");
+                    writeNullSentinel(NullSentinel.NULL_VALUE, dataOutput);
+                } else {
+                    encode(arr[i], dataOutput, visitedRefs);
+                }
+            }
         } else {
             ensureGraphIsAcycled(obj, visitedRefs);
-            for (Field field : clazz.getFields()) {
+//            for (Field field : clazz.getFields()) {
+            for (Field field : getAllNonStaticFields(clazz)) {
+                field.setAccessible(true);
                 dataOutput.writeUTF(field.getName());
                 Object fieldRef = field.get(obj);
                 if (fieldRef == null) {
@@ -52,6 +76,7 @@ public class MySerializer {
                 } else {
                     encode(fieldRef, dataOutput, visitedRefs);
                 }
+                field.setAccessible(false);
             }
         }
     }
@@ -100,17 +125,31 @@ public class MySerializer {
         if (nullSentinel == NullSentinel.NULL_VALUE) {
             return null;
         }
+
         Class<?> clazz = Class.forName(className);
         if (isTypeSimple(clazz)) {
             return createPrimitiveObject(className, inputData);
         }
 
+        if (clazz.isArray()) {
+            int arrLen = inputData.readInt();
+            Object arr = Array.newInstance(clazz, arrLen);
+            for (int i = 0; i < arrLen - 1; i++) {
+                Object arrItem = innerDecode(inputData);
+                Array.set(arr, i, arrItem);
+            }
+            return arr;
+        }
+
         Constructor<?> ctor = clazz.getConstructor();
         Object obj = ctor.newInstance();
-        for (Field _ : clazz.getFields()) {
+//        for (Field _ : clazz.getFields()) {
+        for (Field _ : getAllNonStaticFields(clazz)) {
             String fieldName = inputData.readUTF();
             Field field = clazz.getDeclaredField(fieldName);
+            field.setAccessible(true);
             field.set(obj, innerDecode(inputData));
+            field.setAccessible(false);
         }
         return obj;
     }
@@ -132,6 +171,13 @@ public class MySerializer {
 
     private NullSentinel readNullSentinel(DataInputStream dataInput) throws IOException {
         return (dataInput.readByte() == 0) ? NullSentinel.NULL_VALUE : NullSentinel.NON_NULL_VALUE;
+    }
+
+    private static List<Field> getAllNonStaticFields(Class<?> clazz) {
+        return Arrays
+                .stream(FieldUtils.getAllFields(clazz))
+                .filter(f -> !Modifier.isStatic(f.getModifiers()))
+                .collect(Collectors.toList());
     }
 }
 

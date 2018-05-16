@@ -13,6 +13,8 @@ repositories {
 }
 
 dependencies {
+    compile "org.apache.commons:commons-lang3:3.7"
+
     jmh "org.openjdk.jmh:jmh-generator-annprocess:1.21"
     jmh "com.esotericsoftware:kryo:4.0.2"
     jmh "com.fasterxml.jackson.core:jackson-databind:2.9.5"
