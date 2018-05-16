@@ -1,0 +1,27 @@
+plugins {
+    id "java"
+    id "idea"
+    id "me.champeau.gradle.jmh" version "0.4.5"
+    id "io.morethan.jmhreport" version "0.7.0"
+}
+
+group "com.company"
+version "1.0-SNAPSHOT"
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    jmh "org.openjdk.jmh:jmh-generator-annprocess:1.21"
+    jmh "com.esotericsoftware:kryo:4.0.2"
+    jmh "com.fasterxml.jackson.core:jackson-databind:2.9.5"
+
+    testCompile "junit:junit:4.12"
+}
+
+jmh {
+    jmhVersion = "1.21"
+    duplicateClassesStrategy = "warn"
+    jvmArgs = ["-Xmx5G"]
+}
