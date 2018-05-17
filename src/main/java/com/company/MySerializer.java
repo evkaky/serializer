@@ -8,8 +8,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 // грамматика двоичного формата:
-// obj: ( PRIMITIVE_CLASSNAME NULL_SENTINEL VAL | CLASSNAME ( FIELDNAME obj )* )
-// NULL_SENTINEL 1 - не null, 0 - null
+// obj: ( PRIMITIVE_CLASSNAME NULL_SENTINEL VAL | ARRAY_TYPE ARRAY_LEN | CLASSNAME ( FIELDNAME obj )* )
 
 public class MySerializer {
     public static void main(String[] args) throws Exception {
