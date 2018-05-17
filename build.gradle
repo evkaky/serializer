@@ -25,5 +25,5 @@ dependencies {
 jmh {
     jmhVersion = "1.21"
     duplicateClassesStrategy = "warn"
-    jvmArgs = ["-Xmx5G"]
+    jvmArgs = ["-Xmx4G"]
 }

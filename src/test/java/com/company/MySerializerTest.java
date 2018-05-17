@@ -1,16 +1,18 @@
 package com.company;
 
-import static org.junit.Assert.*;
-
 import org.junit.Test;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
+
+import static org.junit.Assert.assertEquals;
 
 public class MySerializerTest {
 
     @Test
-    public void complex() throws Exception {
+    public void should_serialize_deserialize_graph_with_arrays() throws Exception {
         Person p = new Person();
         p.name = "evkaky";
         p.age = 18;
@@ -28,6 +30,8 @@ public class MySerializerTest {
         Person deserializedPerson = (Person) mySerializer.decode(inStream);
 
         assertEquals(p.nums.size(), deserializedPerson.nums.size());
+        assertEquals(p.nums.get(0), deserializedPerson.nums.get(0));
+        assertEquals(p.nums.get(1), deserializedPerson.nums.get(1));
     }
 
     @Test
@@ -98,7 +102,6 @@ public class MySerializerTest {
 
         assertEquals(p.name, deserializedPerson.name);
         assertEquals(p.age, deserializedPerson.age);
-
         assertEquals(p.anotherPerson.name, deserializedPerson.anotherPerson.name);
         assertEquals(p.anotherPerson.age, deserializedPerson.anotherPerson.age);
     }

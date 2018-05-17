@@ -1,14 +1,10 @@
 package com.company;
 
 import org.apache.commons.lang3.reflect.FieldUtils;
-import org.apache.commons.lang3.reflect.TypeUtils;
 
 import java.io.*;
 import java.lang.reflect.*;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 // грамматика двоичного формата:
@@ -17,8 +13,11 @@ import java.util.stream.Collectors;
 
 public class MySerializer {
     public static void main(String[] args) throws Exception {
-        int[] arr = {22, 33};
-        System.out.println(TypeUtils.getArrayComponentType(arr.getClass()).getTypeName());
+        Object[] arr = {22, 33};
+        arr[0] = 100;
+        arr[1] = "ivan";
+        System.out.println(arr[0]);
+        System.out.println(arr[1]);
     }
 
     private final Set<Class<?>> simpleTypes = new HashSet<>();
@@ -36,48 +35,47 @@ public class MySerializer {
     }
 
     public void encode(Object obj, OutputStream output) throws Exception {
-        HashSet<Object> visitedRefs = new HashSet<>();
+        Set<Object> visitedRefs = new HashSet<>();
         DataOutputStream dataOutput = new DataOutputStream(new BufferedOutputStream(output));
-        encode(obj, dataOutput, visitedRefs);
+        encode(obj, obj.getClass(), dataOutput, visitedRefs);
         dataOutput.flush();
     }
 
     // dfs traverse
-    private void encode(Object obj, DataOutputStream dataOutput, Set<Object> visitedRefs) throws Exception {
-        Class<?> clazz = obj.getClass();
-        String className = clazz.getName();
-        dataOutput.writeUTF(className);
+    private void encode(Object obj, Class<?> clazz, DataOutputStream dataOutput, Set<Object> visitedRefs) throws Exception {
+        dataOutput.writeUTF(clazz.getName());
+
+        if (obj == null) {
+            writeNullSentinel(NullSentinel.NULL_VALUE, dataOutput);
+            return;
+        }
+
         writeNullSentinel(NullSentinel.NON_NULL_VALUE, dataOutput);
 
         if (isTypeSimple(clazz)) {
-            writePrimitiveValue(className, obj, dataOutput);
-        } else if (clazz.isArray()) {
+            writePrimitiveValue(clazz, obj, dataOutput);
+            return;
+        }
+
+        ensureGraphIsAcycled(obj, visitedRefs);
+
+        if (clazz.isArray()) {
             Object[] arr = (Object[]) obj;
             dataOutput.writeInt(arr.length);
             for (int i = 0; i < arr.length - 1; i++) {
-                if (arr[i] == null) {
-//                    dataOutput.writeUTF(TypeUtils.getArrayComponentType(arr.getClass()).getTypeName());
-                    dataOutput.writeUTF("java.lang.Object");
-                    writeNullSentinel(NullSentinel.NULL_VALUE, dataOutput);
-                } else {
-                    encode(arr[i], dataOutput, visitedRefs);
-                }
+                Class<?> arrItemType = (arr[i] == null) ? clazz.getComponentType() : arr[i].getClass();
+                encode(arr[i], arrItemType, dataOutput, visitedRefs);
             }
-        } else {
-            ensureGraphIsAcycled(obj, visitedRefs);
-//            for (Field field : clazz.getFields()) {
-            for (Field field : getAllNonStaticFields(clazz)) {
-                field.setAccessible(true);
-                dataOutput.writeUTF(field.getName());
-                Object fieldRef = field.get(obj);
-                if (fieldRef == null) {
-                    dataOutput.writeUTF(field.getClass().getName());
-                    writeNullSentinel(NullSentinel.NULL_VALUE, dataOutput);
-                } else {
-                    encode(fieldRef, dataOutput, visitedRefs);
-                }
-                field.setAccessible(false);
-            }
+            return;
+        }
+
+        for (Field field : getAllNonStaticFields(clazz)) {
+            field.setAccessible(true);
+            dataOutput.writeUTF(field.getName());
+            Object fieldRef = field.get(obj);
+            Class<?> fieldType = (fieldRef == null) ? field.getType() : fieldRef.getClass();
+            encode(fieldRef, fieldType, dataOutput, visitedRefs);
+            field.setAccessible(false);
         }
     }
 
@@ -99,8 +97,8 @@ public class MySerializer {
         return simpleTypes.contains(clazz);
     }
 
-    private void writePrimitiveValue(String className, Object value, DataOutputStream dataOutput) throws Exception {
-        switch (className) {
+    private void writePrimitiveValue(Class<?> clazz, Object value, DataOutputStream dataOutput) throws Exception {
+        switch (clazz.getName()) {
             case "java.lang.Integer": dataOutput.writeInt((int) value); break;
             case "java.lang.Long": dataOutput.writeLong((long) value); break;
             case "java.lang.Short": dataOutput.writeShort((short) value); break;
@@ -121,41 +119,39 @@ public class MySerializer {
     // dfs traverse
     private Object innerDecode(DataInputStream inputData) throws Exception {
         String className = inputData.readUTF();
+        Class<?> clazz = Class.forName(className);
+
         NullSentinel nullSentinel = readNullSentinel(inputData);
         if (nullSentinel == NullSentinel.NULL_VALUE) {
             return null;
         }
 
-        Class<?> clazz = Class.forName(className);
         if (isTypeSimple(clazz)) {
-            return createPrimitiveObject(className, inputData);
+            return createPrimitiveObject(clazz, inputData);
         }
 
         if (clazz.isArray()) {
             int arrLen = inputData.readInt();
-            Object arr = Array.newInstance(clazz, arrLen);
+            // reflection для создания массивов сломан - полиморфизм не работает
+            Object[] arr = new Object[arrLen];
             for (int i = 0; i < arrLen - 1; i++) {
                 Object arrItem = innerDecode(inputData);
-                Array.set(arr, i, arrItem);
+                arr[i] = arrItem;
             }
             return arr;
         }
 
-        Constructor<?> ctor = clazz.getConstructor();
-        Object obj = ctor.newInstance();
-//        for (Field _ : clazz.getFields()) {
+        Object obj = clazz.newInstance();
         for (Field _ : getAllNonStaticFields(clazz)) {
             String fieldName = inputData.readUTF();
-            Field field = clazz.getDeclaredField(fieldName);
-            field.setAccessible(true);
+            Field field = FieldUtils.getField(clazz, fieldName, true);
             field.set(obj, innerDecode(inputData));
-            field.setAccessible(false);
         }
         return obj;
     }
 
-    private Object createPrimitiveObject(String className, DataInputStream dataInput) throws IOException {
-        switch (className) {
+    private Object createPrimitiveObject(Class<?> clazz, DataInputStream dataInput) throws IOException {
+        switch (clazz.getName()) {
             case "java.lang.Integer": return dataInput.readInt();
             case "java.lang.Long": return dataInput.readLong();
             case "java.lang.Short": return dataInput.readShort();
@@ -166,7 +162,7 @@ public class MySerializer {
             case "java.lang.Boolean": return dataInput.readBoolean();
             case "java.lang.String": return dataInput.readUTF();
         }
-        throw new RuntimeException("unknown primitive type: " + className);
+        throw new RuntimeException("unknown simple type");
     }
 
     private NullSentinel readNullSentinel(DataInputStream dataInput) throws IOException {
@@ -176,8 +172,7 @@ public class MySerializer {
     private static List<Field> getAllNonStaticFields(Class<?> clazz) {
         return Arrays
                 .stream(FieldUtils.getAllFields(clazz))
-                .filter(f -> !Modifier.isStatic(f.getModifiers()))
+                .filter(f -> !Modifier.isStatic(f.getModifiers()) && !f.getType().getName().equals("java.lang.Class"))
                 .collect(Collectors.toList());
     }
 }
-
